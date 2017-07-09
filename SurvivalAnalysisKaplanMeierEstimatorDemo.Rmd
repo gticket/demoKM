@@ -3,7 +3,8 @@ title: "Kaplan–Meier estimator Notebook"
 output: html_notebook
 ---
 
-This notebook illustrates the use of survival analysis for event based processes.
+This notebook illustrates the effectiveness of survival analysis statistics to model event based processes.
+The Kaplan-Meier estimator is used to obtain a survival function using a sample of random data generated from a weibull distribution. This script can be easily adapted for other distributions.
 
 First the required R packages are loaded. 
 
@@ -13,7 +14,7 @@ library(dplyr)
 library(survival)
 
 ```
-In the below section are a function to generate random data based on a density function. Next is a function which is used to display the obtained results and the theoretical expected values. There are 2 further functions 
+In the below section are defined a number of functions. This first generates random data based on a (weibull) distribution function (data generation function). Next is a function which is used to display the obtained results and the theoretical expected values (results display function). The final 2 functions retrieve the period event rate and the cumulative event rate from the (weibull) distribution function.
 ```{r}
 generate_deal <- function(nbr, end_period = 3650, horizon_period = 3650, minimum_duration = 1825, density_function = 0.0001) {
   # The deal period is a random period between the start period (= 1) and the end period
@@ -55,7 +56,6 @@ plot_km_vs_theoretical_value <- function(KM, horizon, cumulative_density_functio
   yi = cumulative_density_function(period = xi)
   plot(x = 0:horizon, y = 1 - yi, xlim = c(0,horizon), ylim = c(0,1), col = 'green',
        xlab = 'theoretical = green, Kaplan Meier = blue', xaxs = 'r', main = paste0('horizon set to ', horizon))
-  return(KM)
 }
 
 get_period_event_rate_weibull <- function(period, k = k_value, lambda = lambda_value) {
@@ -68,26 +68,34 @@ get_period_cumulative_event_rate_weibull <- function(period, k = k_value, lambda
   return(pweibull(period,k,scale = lambda))
 }
 ```
-Below are listed the input parameters of the data generation process and of the distribution function. Here the Weibull distribution is used. 
+Below are listed the input parameters of the data generation process and of the distribution function. These values can be modified to examine the accuracy of the Kaplan-Meier estimator for other Weibull distributions. The corresponding Weibull distribution is displayed.
 ```{r}
 end <- 100
 horizon <- 100
 k_value <- 2 # update this to get a different k value for the weibull rate
 lambda_value <- 40 # update this to get a different lambda / scale value for the weibull rate
-# weibull event rate functions
+# generic functions to assign the specific event rate functions
 period_event_rate <- get_period_event_rate_weibull
 period_event_cumulative_rate <- get_period_cumulative_event_rate_weibull
+# the weibull distribution plot
+x <- seq(0, horizon, length=10*horizon)
+y <- dweibull(x,k_value,scale = lambda_value) # density
+data <- as.data.frame(cbind(x,y))
+plot <- ggplot(data, aes(x = data$x, y = data$y))
+print(plot + geom_line() + xlab(paste("k = ", k_value, " ; lambda = ", lambda_value)) + ylab("Weibull density"))
 ```
-Below is the main section of the notebook
+Below is the main section of the notebook.
+First the data generation function is called (modify the nbr parameter to get a different sample size).
+In the next 2 lines a Kaplan-Meier estimator model is generated.
+In the last line the results display function is called which allows to get a feeling of the accuracy of the obtained survival function compared to the theoretical survival function.
 ```{r}
 # generate data
-data <- generate_deal(nbr = 30, end_period = end, horizon_period = horizon, minimum_duration = 10, density_function = period_event_rate)
+data <- generate_deal(nbr = 40, end_period = end, horizon_period = horizon, minimum_duration = 10, density_function = period_event_rate)
 
 # The below 2 lines of code are the only ones needed to construct the model
 data_surv <- Surv(data$time,data$censor)
 KM=survfit(data_surv~1) # Obtain the Kaplan-Meier estimator
 
 # Kaplan Meier analysis
-KM <- plot_km_vs_theoretical_value(KM = KM, horizon = end, cumulative_density_function = period_event_cumulative_rate)
+plot_km_vs_theoretical_value(KM = KM, horizon = end, cumulative_density_function = period_event_cumulative_rate)
 ```
-
