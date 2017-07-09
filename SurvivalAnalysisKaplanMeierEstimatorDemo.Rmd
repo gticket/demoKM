@@ -1,0 +1,93 @@
+---
+title: "Kaplan–Meier estimator Notebook"
+output: html_notebook
+---
+
+This notebook illustrates the use of survival analysis for event based processes.
+
+First the required R packages are loaded. 
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(survival)
+
+```
+In the below section are a function to generate random data based on a density function. Next is a function which is used to display the obtained results and the theoretical expected values. There are 2 further functions 
+```{r}
+generate_deal <- function(nbr, end_period = 3650, horizon_period = 3650, minimum_duration = 1825, density_function = 0.0001) {
+  # The deal period is a random period between the start period (= 1) and the end period
+  deal_period <- sample(1:end_period, nbr, TRUE)
+  # Initially we apply the same logic to the maturity period (so for the moment a deal can mature before it starts)
+  maturity_period <- sample(1:end_period, nbr, TRUE)
+  # Convert to a data frame
+  data <- as.data.frame(cbind(end_period,deal_period,maturity_period))
+  # The maturity period is increase with the deal period and the minimum duration
+  data$maturity_period <- data$deal_period + data$maturity_period + minimum_duration
+  # Without default the time value for the survival analysis is the minimum of the maturity period and the horizon period reduced with the deal period
+  data$time <- data$maturity_period
+  data$time[which(horizon_period < data$maturity_period)] <- horizon_period
+  data$time <- data$time - data$deal_period
+  # Without default all deals are censored for the survival analysis (set to 0 and NOT to 1)
+  data$censor <- 0
+  # Initially set all deals as not defaulted
+  data$default_period <- -1
+  ## Iterate over the data to determine a default period and time (for each time period until the deal time)
+  for (time in 1:end_period) {
+    # here we use a constant daily default rate (update with a function call to a weibull if time permits)
+    default_rate <- density_function(period = time)
+    default_check <- runif(n = nbr) # generates nbr uniform random variables from 0 to 1
+    # if the default check is smaller than the default rate and the deal has not matured nor has it defaulted in an earlier period
+    # then set the default period to the deal date increased with the current value of time variable we are iterating over
+    data$default_period[which(default_check < default_rate & time < data$time & data$default_period == -1)] <- data$deal_period[which(default_check < default_rate & time < data$time & data$default_period == -1)] + time
+    # update the censor status accordingly (defaulted = not censored)
+    data$censor[which(data$default_period == data$deal_period + time)] <- 1 # set to 1 and NOT to 0
+    # update the time value accordingly
+    data$time[which(default_check < default_rate & time < data$time & data$default_period == data$deal_period + time)] <- time
+  }
+  return(data)
+}
+
+plot_km_vs_theoretical_value <- function(KM, horizon, cumulative_density_function) {
+  plot(KM, xlim = c(0,horizon), ylim = c(0,1), col = 'blue', xaxs = 'r') # plots the KM with 95% confidence intervals
+  par(new=TRUE)
+  xi = seq(0:horizon)
+  yi = cumulative_density_function(period = xi)
+  plot(x = 0:horizon, y = 1 - yi, xlim = c(0,horizon), ylim = c(0,1), col = 'green',
+       xlab = 'theoretical = green, Kaplan Meier = blue', xaxs = 'r', main = paste0('horizon set to ', horizon))
+  return(KM)
+}
+
+get_period_event_rate_weibull <- function(period, k = k_value, lambda = lambda_value) {
+  p <- pweibull(period,k,scale = lambda)
+  p_prev <- pweibull(period - 1,k,scale = lambda)
+  return((p - p_prev) / (1 - p_prev))
+}
+
+get_period_cumulative_event_rate_weibull <- function(period, k = k_value, lambda = lambda_value) {
+  return(pweibull(period,k,scale = lambda))
+}
+```
+Below are listed the input parameters of the data generation process and of the distribution function. Here the Weibull distribution is used. 
+```{r}
+end <- 100
+horizon <- 100
+k_value <- 2 # update this to get a different k value for the weibull rate
+lambda_value <- 40 # update this to get a different lambda / scale value for the weibull rate
+# weibull event rate functions
+period_event_rate <- get_period_event_rate_weibull
+period_event_cumulative_rate <- get_period_cumulative_event_rate_weibull
+```
+Below is the main section of the notebook
+```{r}
+# generate data
+data <- generate_deal(nbr = 30, end_period = end, horizon_period = horizon, minimum_duration = 10, density_function = period_event_rate)
+
+# The below 2 lines of code are the only ones needed to construct the model
+data_surv <- Surv(data$time,data$censor)
+KM=survfit(data_surv~1) # Obtain the Kaplan-Meier estimator
+
+# Kaplan Meier analysis
+KM <- plot_km_vs_theoretical_value(KM = KM, horizon = end, cumulative_density_function = period_event_cumulative_rate)
+```
+
